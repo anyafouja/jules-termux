@@ -1,0 +1,57 @@
+name: Check Jules Updates
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get current version
+        id: current
+        run: |
+          CURRENT=$(grep 'JULES_VERSION=' install.sh | head -1 | cut -d'"' -f2)
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Get latest npm version
+        id: latest
+        run: |
+          LATEST=$(curl -s https://registry.npmjs.org/@google/jules | jq -r '.["dist-tags"].latest')
+          echo "latest=$LATEST" >> $GITHUB_OUTPUT
+          echo "npm_version=$LATEST" >> $GITHUB_OUTPUT
+
+      - name: Compare versions
+        id: compare
+        run: |
+          if [ "${{ steps.current.outputs.current }}" != "${{ steps.latest.outputs.latest }}" ]; then
+            echo "update_available=true" >> $GITHUB_OUTPUT
+            echo "New version available: ${{ steps.current.outputs.current }} → ${{ steps.latest.outputs.latest }}"
+          else
+            echo "update_available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create update PR
+        if: steps.compare.outputs.update_available == 'true'
+        run: |
+          NPM_VER="${{ steps.latest.outputs.latest }}"
+          sed -i "s/JULES_VERSION=\"[^\"]*\"/JULES_VERSION=\"v${NPM_VER}\"/" install.sh
+
+          BRANCH="update-v${NPM_VER}"
+          git config user.name "jules-termux[bot]"
+          git config user.email "bot@jules-termux"
+          git checkout -b "$BRANCH"
+          git add install.sh
+          git commit -m "chore: bump Jules CLI to v${NPM_VER}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update Jules CLI to v${NPM_VER}" \
+            --body "Auto-detected new version: \`${{ steps.current.outputs.current }}\` → \`v${NPM_VER}\`" \
+            --base main \
+            --head "$BRANCH"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

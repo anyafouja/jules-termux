@@ -1,0 +1,10 @@
+# Jules CLI Termux
+
+# Temp files
+*.tmp
+*.tar.gz
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
